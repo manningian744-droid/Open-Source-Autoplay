@@ -11,6 +11,32 @@ local Workspace   = game:GetService("Workspace")
 local StarterGui  = game:GetService("StarterGui")
 local LocalPlayer = Players.LocalPlayer
 
+local REPO_BASE   = "https://raw.githubusercontent.com/manningian744-droid/Open-Source-Autoplay/refs/heads/main/"
+local MANIFEST_URL = REPO_BASE .. "manifest.txt"
+local FOLDER      = "TAS_Recorder"
+
+local DISPLAY_NAMES = {
+    ["boot1"]   = "Bootcamp (Left)",
+    ["boot2"]   = "Bootcamp (Middle)",
+    ["boot3"]   = "Bootcamp (Right)",
+    ["cave"]    = "Cave Chaos",
+    ["collo"]   = "Colosseum Climb",
+    ["collo2"]  = "Colosseum Climb (Faster)",
+    ["cons"]    = "Construct Course",
+    ["hill"]    = "Hill Hike",
+    ["lava"]    = "Lava Dash",
+    ["obsta"]   = "Obstacle Course",
+    ["pond"]    = "Pond Pier",
+    ["rickety"] = "Rickety Rails",
+    ["rock1"]   = "Rockwall (Left)",
+    ["rock2"]   = "Rockwall (Middle)",
+    ["rock3"]   = "Rockwall (Right)",
+    ["spin"]    = "Spinner",
+    ["sweep"]   = "Sweeper",
+    ["tight"]   = "Tightrope",
+    ["unstab"]  = "Unstable Savannah",
+}
+
 local function notify(text, title, dur)
     pcall(function()
         StarterGui:SetCore("SendNotification", {
@@ -19,42 +45,36 @@ local function notify(text, title, dur)
     end)
 end
 
--- Ordered list: { id = filename (no ext), label = button display name, src = GitHub filename }
-local RUN_LIST = {
-    { id = "boot1",   label = "Bootcamp (Left)",         src = "Bootcamp%20Team%201.json"   },
-    { id = "boot2",   label = "Bootcamp (Middle)",        src = "Bootcamp%20Team%202.json"   },
-    { id = "boot3",   label = "Bootcamp (Right)",         src = "Bootcamp%20Team%203.json"   },
-    { id = "cave",    label = "Cave Chaos",               src = "Cave%20Chaos.json"          },
-    { id = "collo",   label = "Colosseum Climb",          src = "Colosseum.json"             },
-    { id = "collo2",  label = "Colosseum Climb (Faster)", src = "Colosseum%202.json"         },
-    { id = "cons",    label = "Construct Course",         src = "Construct%20Course.json"    },
-    { id = "hill",    label = "Hill Hike",                src = "Hill%20HIke.json"           },
-    { id = "lava",    label = "Lava Dash",                src = "Lava%20Dash.json"           },
-    { id = "obsta",   label = "Obstacle Course",          src = "Obstacle%20Course.json"     },
-    { id = "pond",    label = "Pond Pier",                src = "Pond%20Pier.json"           },
-    { id = "rickety", label = "Rickety Rails",            src = "Rickety%20Rails.json"       },
-    { id = "rock1",   label = "Rockwall (Left)",          src = "Rock%20Wall%20Team%201.json"},
-    { id = "rock2",   label = "Rockwall (Middle)",        src = "Rock%20Wall%20Team%202.json"},
-    { id = "rock3",   label = "Rockwall (Right)",         src = "Rock%20Wall%20Team%203.json"},
-    { id = "spin",    label = "Spinner",                  src = "Spinner.json"               },
-    { id = "sweep",   label = "Sweeper",                  src = "Sweeper.json"               },
-    { id = "tight",   label = "Tightrope",                src = "Tightrope%20Obby.json"      },
-    { id = "unstab",  label = "Unstable Savannah",        src = "Unstable%20Savannah.json"   },
-}
+-- Reads manifest.txt from the repo, returns list of {id, label} in order
+local function FetchManifest()
+    local ok, content = pcall(function()
+        return game:HttpGet(MANIFEST_URL, true)
+    end)
+    if not ok or not content or #content < 3 then return nil end
+    local runs = {}
+    for line in content:gmatch("[^\r\n]+") do
+        line = line:match("^%s*(.-)%s*$")
+        if line ~= "" then
+            local id = line:gsub("%.json$", "")
+            local label = DISPLAY_NAMES[id] or id
+            table.insert(runs, { id = id, label = label })
+        end
+    end
+    return #runs > 0 and runs or nil
+end
 
-local BASE_URL = "https://raw.githubusercontent.com/callienew/tas-skid-skid-skid/refs/heads/main/"
-
-local function LH_EnsureRuns()
-    if not isfolder("TAS_Recorder") then makefolder("TAS_Recorder") end
+-- Downloads any runs listed in the manifest that aren't already on disk
+local function EnsureRuns(runs)
+    if not isfolder(FOLDER) then makefolder(FOLDER) end
     local downloaded = 0
     local skipped    = 0
-    for _, run in ipairs(RUN_LIST) do
-        local path = "TAS_Recorder/" .. run.id .. ".json"
+    for _, run in ipairs(runs) do
+        local path = FOLDER .. "/" .. run.id .. ".json"
         if isfile(path) then
             skipped = skipped + 1
         else
             local ok, content = pcall(function()
-                return game:HttpGet(BASE_URL .. run.src, true)
+                return game:HttpGet(REPO_BASE .. run.id .. ".json", true)
             end)
             if ok and content and #content > 10 then
                 pcall(function() writefile(path, content) end)
@@ -63,12 +83,11 @@ local function LH_EnsureRuns()
         end
     end
     if downloaded > 0 then
-        notify("Downloaded " .. downloaded .. " run(s). " .. skipped .. " already existed.", "LifeHub", 5)
+        notify("Downloaded " .. downloaded .. " new run(s). " .. skipped .. " already existed.", "LifeHub", 5)
     end
 end
 
-LH_EnsureRuns()
-
+-- Playback engine
 local ValToStateName = {}
 for _, s in ipairs(Enum.HumanoidStateType:GetEnumItems()) do
     ValToStateName[s.Value] = s.Name
@@ -223,7 +242,7 @@ local function PlayRun(label, rawJson)
 end
 
 local function LoadRunFromFile(id, label)
-    local path = "TAS_Recorder/" .. id .. ".json"
+    local path = FOLDER .. "/" .. id .. ".json"
     if not isfile(path) then
         notify("File not found: " .. id .. ".json", "TAS Error"); return
     end
@@ -234,6 +253,28 @@ local function LoadRunFromFile(id, label)
     PlayRun(label, content)
 end
 
+-- Fetch manifest and download missing runs before building the GUI
+local runs = FetchManifest()
+if not runs then
+    -- Manifest missing or empty — fall back to whatever is already on disk
+    if not isfolder(FOLDER) then makefolder(FOLDER) end
+    local allFiles = listfiles(FOLDER)
+    runs = {}
+    for _, path in ipairs(allFiles) do
+        local filename = path:match("([^/\\]+)$") or path
+        if filename:match("%.json$") then
+            local id = filename:gsub("%.json$", "")
+            local label = DISPLAY_NAMES[id] or id
+            table.insert(runs, { id = id, label = label })
+        end
+    end
+    table.sort(runs, function(a, b) return a.id < b.id end)
+    notify("Could not fetch manifest — showing local runs only.", "LifeHub", 4)
+else
+    EnsureRuns(runs)
+end
+
+-- GUI
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
 local Window = Rayfield:CreateWindow({
@@ -246,9 +287,9 @@ local Window = Rayfield:CreateWindow({
 })
 
 local RunTab = Window:CreateTab("Runs", 4483362458)
-RunTab:CreateSection("Saved Runs — click to play")
+RunTab:CreateSection("Saved Runs (" .. #runs .. ") — click to play")
 
-for _, run in ipairs(RUN_LIST) do
+for _, run in ipairs(runs) do
     RunTab:CreateButton({
         Name        = run.label,
         Description = run.id .. ".json",
@@ -287,4 +328,4 @@ getgenv().TAS_PlayGUI_Disconnect = function()
     notify("TAS Play GUI unloaded.", "TAS Player")
 end
 
-notify("TAS Player ready! " .. #RUN_LIST .. " runs loaded.", "TAS Player", 4)
+notify("TAS Player ready! " .. #runs .. " run(s) loaded.", "TAS Player", 4)
