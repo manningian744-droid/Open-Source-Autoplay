@@ -9,6 +9,10 @@ hill.json
 lava.json
 obsta.json
 pond.json
+rickety.json
+rock1.json
+rock2.json
+rock3.json
 spin.json
 sweep.json
 tight.json
