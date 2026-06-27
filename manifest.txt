@@ -17,3 +17,5 @@ spin.json
 sweep.json
 tight.json
 unstab.json
+caveclip.json
+unstabclip.json
